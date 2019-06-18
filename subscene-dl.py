@@ -36,9 +36,19 @@ VIDEO_EXTENSIONS = ('.3g2', '.3gp', '.3gp2', '.3gpp', '.60d', '.ajp', '.asf', '.
 
 
 def is_meta_match(x, y):
-    return x['type'] == 'episode' and y['type'] == 'episode' and not y['session_pack'] and \
-           ((x['season'] == y['season'] and x['episode'] == y['episode']) or
-            ('date' in x and 'date' in y and x['date'] == y['date']))
+    if x['type'] == 'movie' and y['type'] == 'movie':
+        return True
+
+    if x['type'] == 'episode' and y['type'] == 'episode':
+        if x['season'] == y['season']:
+            if 'episode' not in x and 'episode' not in y:
+                return 'date' in x and 'date' in y and x['date'] == y['date']
+            if isinstance(x['episode'], list):
+                i=y['episode']
+                return bool(set(x['episode']).intersection(i if isinstance(i, list) else [i]))
+            if isinstance(y['episode'], list):
+                return x['episode'] in y['episode']
+            return x['episode'] == y['episode']
 
 
 def cleanchar(text):
@@ -58,7 +68,7 @@ def search_subscene(title):
             subtitle_meta['filename'] = title
             subtitle_meta['subtitle_object'] = subtitle
             subtitle_meta['session_pack'] = subtitle_meta['type'] == 'episode' and (
-                'episode' not in subtitle_meta or isinstance(subtitle_meta['episode'], list) and len(subtitle_meta['episode']) >= 4
+                'episode' not in subtitle_meta or isinstance(subtitle_meta['episode'], list)
             )
             yield subtitle_meta
 
@@ -112,19 +122,20 @@ def download_subtitles(files):
 
         subtitle_metas = search_subscene(title)
 
-        if session_pack:
-            for subtitle_meta in filter(lambda s: s['session_pack'], subtitle_metas):
-                #if pack does not have the ep we want, skip it
-                if 'episode' in subtitle_meta and isinstance(subtitle_meta['episode'], list):
-                    eps = [v['episode'] for v in v_metas if not v['downloaded']]
-                    eps = set(itertools.chain.from_iterable([i if isinstance(i, list) else [i] for i in eps]))
-                    if not eps.intersection(subtitle_meta['episode']):
-                        continue
-                print("trying to download:"+subtitle_meta['filename'])
-                download_sesson_pack(v_metas, subtitle_meta['subtitle_object'].zipped_url)
-                #if all subs downloaded
-                if any([v['downloaded'] for v in v_metas]):
-                    break
+        #season packs have priority
+        for subtitle_meta in filter(lambda s: s['session_pack'], subtitle_metas):
+            # print(subtitle_meta)
+            #if pack does not have the ep we want, skip it
+            if 'episode' in subtitle_meta and isinstance(subtitle_meta['episode'], list):
+                eps = [v['episode'] for v in v_metas if not v['downloaded']]
+                eps = set(itertools.chain.from_iterable([i if isinstance(i, list) else [i] for i in eps]))
+                if not eps.intersection(subtitle_meta['episode']):
+                    continue
+            # print("trying to download:"+subtitle_meta['filename'])
+            download_sesson_pack(v_metas, subtitle_meta['subtitle_object'].zipped_url)
+            #if all subs downloaded
+            if all([v['downloaded'] for v in v_metas]):
+                break
 
         #download others files that season pack doesnt get
         for video_meta in filter(lambda v: not v['downloaded'], v_metas):
