@@ -128,12 +128,12 @@ def find_video_files(path):
     elif path.endswith(VIDEO_EXTENSIONS):
         dirpath, filename = os.path.split(path)
         dirpath = dirpath or '.'
-        fileroot, fileext = os.path.splitext(path)
+        fileroot, fileext = os.path.splitext(filename)
 
         for p in os.listdir(dirpath):
             if p.startswith(fileroot) and p.endswith(SUBTITLE_EXTENSIONS):
-                continue
-        return (path)
+                return
+        yield path
 
 
 '''
