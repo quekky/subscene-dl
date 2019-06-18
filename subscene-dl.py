@@ -11,9 +11,6 @@ import subscene_api as subscene
 from guessit import guessit
 from pprint import pprint
 
-aliases = {
-    'running man': 'Running Man 런닝맨'
-}
 
 wanted_language = "English"
 guessit_options = {
@@ -116,10 +113,6 @@ def download_subtitles(files):
         video_metas[title].append(video_meta)
 
     for title, v_metas in video_metas.items():
-        session_pack = len(v_metas) >= 4
-        if title.lower() in aliases:
-            title = aliases[title.lower()]
-
         subtitle_metas = search_subscene(title)
 
         #season packs have priority

@@ -34,6 +34,7 @@ from contextlib import suppress
 # from urllib.request import Request, urlopen
 from bs4 import BeautifulSoup
 import cloudscraper
+from fuzzywuzzy import fuzz, process
 
 # constants
 HEADERS = {
@@ -155,7 +156,10 @@ class Film:
         content = soup.find("div", "subtitles")
         header = content.find("div", "box clearfix")
 
-        cover = header.find("div", "poster").img.get("src")
+        try:
+            cover = header.find("div", "poster").img.get("src")
+        except:
+            cover = None
 
         title = header.find("div", "header").h2.text[:-12].strip()
 
@@ -186,7 +190,7 @@ def section_exists(soup, section):
     return False
 
 
-def get_first_film(soup, section):
+def get_first_film(soup, section, term):
     tag_part = SectionsParts[section]
     tag = None
 
@@ -199,7 +203,18 @@ def get_first_film(soup, section):
     if not tag:
         return
 
-    url = SITE_DOMAIN + tag.findNext("ul").find("li").div.a.get("href")
+    titles = []
+    for title in tag.findNext("ul").find_all("li"):
+        try:
+            num=int(title.span.text.split()[0])
+        except:
+            num=0
+        titles.append([title.div.a.text, title.div.a.get("href"), num])
+    titles=[i[0] for i in process.extract(term, titles)]
+    if not titles:
+        return
+    url = SITE_DOMAIN + max(titles, key=lambda x: x[2])[1]
+
     return Film.from_url(url)
 
 
@@ -223,7 +238,7 @@ def search(term, language="", limit_to=SearchTypes.Exact):
 
     for junk, search_type in SearchTypes.__members__.items():
         if section_exists(soup, search_type):
-            return get_first_film(soup, search_type)
+            return get_first_film(soup, search_type, term)
 
         if limit_to == search_type:
             return

@@ -2,3 +2,4 @@
 beautifulsoup4
 guessit
 cloudscraper
+fuzzywuzzy
