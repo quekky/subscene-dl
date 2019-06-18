@@ -3,11 +3,13 @@ import re
 import os
 import sys
 import time
+import itertools
 import unicodedata
 import zipfile
 from collections import defaultdict
 import subscene_api as subscene
 from guessit import guessit
+from pprint import pprint
 
 aliases = {
     'running man': 'Running Man 런닝맨'
@@ -39,13 +41,21 @@ def is_meta_match(x, y):
             ('date' in x and 'date' in y and x['date'] == y['date']))
 
 
+def cleanchar(text):
+    text = unicodedata.normalize('NFKD', text)
+    text = re.sub(u'[\u2013\u2014\u3161]', '-', text)
+    text = re.sub(u'[\u00B7\u2000-\u206F\u22C5\u318D]', '.', text)
+    return text
+
+
 def search_subscene(title):
     film = subscene.search(title, "en", 0)
     for subtitle in film.subtitles:
         if subtitle.language == wanted_language:
-            title = re.sub(u'[\u2013\u2014\u3161]', '-', subtitle.title)
+            title = cleanchar(subtitle.title)
             subtitle_meta = guessit(title, guessit_options)
             subtitle_meta.setdefault('season', 1)
+            subtitle_meta['filename'] = title
             subtitle_meta['subtitle_object'] = subtitle
             subtitle_meta['session_pack'] = subtitle_meta['type'] == 'episode' and (
                 'episode' not in subtitle_meta or isinstance(subtitle_meta['episode'], list) and len(subtitle_meta['episode']) >= 4
@@ -57,6 +67,7 @@ def download_single_sub(video_filename, ziplink):
     r = subscene.request_session.get(ziplink, headers=subscene.HEADERS)
     html = r.content
     with zipfile.ZipFile(io.BytesIO(html)) as z:
+        # print("Found sub: "+ziplink)
         for infofile in z.infolist()[:1]:
             sub_ext = os.path.splitext(infofile.filename)[1]
             vid_name = os.path.splitext(video_filename)[0]
@@ -69,10 +80,12 @@ def download_sesson_pack(v_metas, ziplink):
     r = subscene.request_session.get(ziplink, headers=subscene.HEADERS)
     html = r.content
     with zipfile.ZipFile(io.BytesIO(html)) as z:
+        # print("Found season pack sub: "+ziplink)
         for infofile in z.infolist():
-            zip_meta = guessit(infofile.filename, guessit_options)
+            zip_meta = guessit(cleanchar(infofile.filename), guessit_options)
             zip_meta.setdefault('season', 1)
             zip_meta['session_pack'] = False
+            # print("Inside zip:"+infofile.filename)
             for v_meta in filter(lambda v: is_meta_match(v, zip_meta), v_metas):
                 sub_ext = os.path.splitext(infofile.filename)[1]
                 vid_name = os.path.splitext(v_meta['filename'])[0]
@@ -85,7 +98,7 @@ def download_sesson_pack(v_metas, ziplink):
 def download_subtitles(files):
     video_metas = defaultdict(list)
     for f in files:
-        video_meta = guessit(f, guessit_options)
+        video_meta = guessit(cleanchar(f), guessit_options)
         video_meta['filename'] = f
         video_meta['downloaded'] = False
         video_meta.setdefault('season', 1)
@@ -101,6 +114,13 @@ def download_subtitles(files):
 
         if session_pack:
             for subtitle_meta in filter(lambda s: s['session_pack'], subtitle_metas):
+                #if pack does not have the ep we want, skip it
+                if 'episode' in subtitle_meta and isinstance(subtitle_meta['episode'], list):
+                    eps = [v['episode'] for v in v_metas if not v['downloaded']]
+                    eps = set(itertools.chain.from_iterable([i if isinstance(i, list) else [i] for i in eps]))
+                    if not eps.intersection(subtitle_meta['episode']):
+                        continue
+                print("trying to download:"+subtitle_meta['filename'])
                 download_sesson_pack(v_metas, subtitle_meta['subtitle_object'].zipped_url)
                 #if all subs downloaded
                 if any([v['downloaded'] for v in v_metas]):
