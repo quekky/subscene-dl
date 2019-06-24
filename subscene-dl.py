@@ -38,7 +38,7 @@ def is_meta_match(x, y):
 
     if x['type'] == 'episode' and y['type'] == 'episode':
         if x['season'] == y['season']:
-            if 'episode' not in x and 'episode' not in y:
+            if 'episode' not in x or 'episode' not in y:
                 return 'date' in x and 'date' in y and x['date'] == y['date']
             if isinstance(x['episode'], list):
                 i=y['episode']
@@ -46,11 +46,12 @@ def is_meta_match(x, y):
             if isinstance(y['episode'], list):
                 return x['episode'] in y['episode']
             return x['episode'] == y['episode']
+        return False
 
 
 def cleanchar(text):
     text = unicodedata.normalize('NFKD', text)
-    text = re.sub(u'[\u2013\u2014\u3161]', '-', text)
+    text = re.sub(u'[\u2013\u2014\u3161\u1173\uFFDA]', '-', text)
     text = re.sub(u'[\u00B7\u2000-\u206F\u22C5\u318D]', '.', text)
     return text
 
@@ -78,6 +79,8 @@ def download_single_sub(video_filename, ziplink):
         for infofile in z.infolist()[:1]:
             sub_ext = os.path.splitext(infofile.filename)[1]
             vid_name = os.path.splitext(video_filename)[0]
+            if savepath:
+                vid_name = os.path.join(savepath, os.path.split(vid_name)[1])
             file = open(vid_name + sub_ext, 'wb')
             file.write(z.read(infofile))
             print("File downloaded: ", vid_name + sub_ext)
@@ -93,9 +96,11 @@ def download_sesson_pack(v_metas, ziplink):
             zip_meta.setdefault('season', 1)
             zip_meta['session_pack'] = False
             # print("Inside zip:"+infofile.filename)
-            for v_meta in filter(lambda v: is_meta_match(v, zip_meta), v_metas):
+            for v_meta in filter(lambda v: not v['downloaded'] and is_meta_match(v, zip_meta), v_metas):
                 sub_ext = os.path.splitext(infofile.filename)[1]
                 vid_name = os.path.splitext(v_meta['filename'])[0]
+                if savepath:
+                    vid_name = os.path.join(savepath, os.path.split(vid_name)[1])
                 file = open(vid_name + sub_ext, 'wb')
                 file.write(z.read(infofile))
                 print("File downloaded: ", vid_name + sub_ext)
@@ -113,7 +118,7 @@ def download_subtitles(files):
         video_metas[title].append(video_meta)
 
     for title, v_metas in video_metas.items():
-        subtitle_metas = search_subscene(title)
+        subtitle_metas = list(search_subscene(title))
 
         #season packs have priority
         for subtitle_meta in filter(lambda s: s['session_pack'], subtitle_metas):
@@ -161,7 +166,7 @@ def find_video_files(path):
 
 
 '''
-subscene-dl.py filename.mkv
+subscene-dl.py filename.mkv [where_to_save]
     will download sub for filename.mkv
 
 subscene-dl.py /somedir
@@ -170,5 +175,7 @@ subscene-dl.py /somedir
 note: subscene-dl.py will skip any file that already have subs
 '''
 if __name__ == "__main__":
+    if len(sys.argv) > 2:
+        savepath = sys.argv[2]
     videos = find_video_files(os.path.normpath(sys.argv[1]))
     download_subtitles(videos)
