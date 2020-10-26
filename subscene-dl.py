@@ -9,6 +9,7 @@ import zipfile
 from collections import defaultdict
 import subscene_api as subscene
 from guessit import guessit
+import argparse
 from pprint import pprint
 
 
@@ -20,7 +21,7 @@ guessit_options = {
 
 
 #: Subtitle extensions
-SUBTITLE_EXTENSIONS = ('.srt', '.sub', '.smi', '.txt', '.ssa', '.ass', '.mpl')
+SUBTITLE_EXTENSIONS = ('.srt', '.sub', '.smi', '.ssa', '.ass', '.mpl')
 #: Video extensions
 VIDEO_EXTENSIONS = ('.3g2', '.3gp', '.3gp2', '.3gpp', '.60d', '.ajp', '.asf', '.asx', '.avchd', '.avi', '.bik',
                     '.bix', '.box', '.cam', '.dat', '.divx', '.dmf', '.dv', '.dvr-ms', '.evo', '.flc', '.fli',
@@ -46,7 +47,8 @@ def is_meta_match(x, y):
             if isinstance(y['episode'], list):
                 return x['episode'] in y['episode']
             return x['episode'] == y['episode']
-        return False
+        #if season not match, still try to match by date
+        return 'date' in x and 'date' in y and x['date'] == y['date']
 
 
 def cleanchar(text):
@@ -57,7 +59,7 @@ def cleanchar(text):
 
 
 def search_subscene(title):
-    film = subscene.search(title, "en", 0)
+    film = subscene.search(title, "en", searchtype)
     for subtitle in film.subtitles:
         if subtitle.language == wanted_language:
             title = cleanchar(subtitle.title)
@@ -76,14 +78,15 @@ def download_single_sub(video_filename, ziplink):
     html = r.content
     with zipfile.ZipFile(io.BytesIO(html)) as z:
         # print("Found sub: "+ziplink)
-        for infofile in z.infolist()[:1]:
+        vid_name = os.path.splitext(video_filename)[0]
+        if args.savepath:
+            vid_name = os.path.join(args.savepath, os.path.split(vid_name)[1])
+        for infofile in z.infolist():
             sub_ext = os.path.splitext(infofile.filename)[1]
-            vid_name = os.path.splitext(video_filename)[0]
-            if savepath:
-                vid_name = os.path.join(savepath, os.path.split(vid_name)[1])
-            file = open(vid_name + sub_ext, 'wb')
-            file.write(z.read(infofile))
-            print("File downloaded: ", vid_name + sub_ext)
+            if sub_ext in SUBTITLE_EXTENSIONS:
+                file = open(vid_name + sub_ext, 'wb')
+                file.write(z.read(infofile))
+                print("File downloaded: ", vid_name + sub_ext)
 
 
 def download_sesson_pack(v_metas, ziplink):
@@ -92,19 +95,20 @@ def download_sesson_pack(v_metas, ziplink):
     with zipfile.ZipFile(io.BytesIO(html)) as z:
         # print("Found season pack sub: "+ziplink)
         for infofile in z.infolist():
-            zip_meta = guessit(cleanchar(infofile.filename), guessit_options)
-            zip_meta.setdefault('season', 1)
-            zip_meta['session_pack'] = False
-            # print("Inside zip:"+infofile.filename)
-            for v_meta in filter(lambda v: not v['downloaded'] and is_meta_match(v, zip_meta), v_metas):
-                sub_ext = os.path.splitext(infofile.filename)[1]
-                vid_name = os.path.splitext(v_meta['filename'])[0]
-                if savepath:
-                    vid_name = os.path.join(savepath, os.path.split(vid_name)[1])
-                file = open(vid_name + sub_ext, 'wb')
-                file.write(z.read(infofile))
-                print("File downloaded: ", vid_name + sub_ext)
-                v_meta['downloaded'] = True
+            sub_ext = os.path.splitext(infofile.filename)[1]
+            if sub_ext in SUBTITLE_EXTENSIONS:
+                zip_meta = guessit(cleanchar(infofile.filename), guessit_options)
+                zip_meta.setdefault('season', 1)
+                zip_meta['session_pack'] = False
+                # print("Inside zip:"+infofile.filename)
+                for v_meta in filter(lambda v: is_meta_match(v, zip_meta), v_metas):
+                    vid_name = os.path.splitext(v_meta['filename'])[0]
+                    if args.savepath:
+                        vid_name = os.path.join(args.savepath, os.path.split(vid_name)[1])
+                    file = open(vid_name + sub_ext, 'wb')
+                    file.write(z.read(infofile))
+                    print("File downloaded: ", vid_name + sub_ext)
+                    v_meta['downloaded'] = True
 
 
 def download_subtitles(files):
@@ -120,20 +124,21 @@ def download_subtitles(files):
     for title, v_metas in video_metas.items():
         subtitle_metas = list(search_subscene(title))
 
-        #season packs have priority
-        for subtitle_meta in filter(lambda s: s['session_pack'], subtitle_metas):
-            # print(subtitle_meta)
-            #if pack does not have the ep we want, skip it
-            if 'episode' in subtitle_meta and isinstance(subtitle_meta['episode'], list):
-                eps = [v['episode'] for v in v_metas if not v['downloaded']]
-                eps = set(itertools.chain.from_iterable([i if isinstance(i, list) else [i] for i in eps]))
-                if not eps.intersection(subtitle_meta['episode']):
-                    continue
-            # print("trying to download:"+subtitle_meta['filename'])
-            download_sesson_pack(v_metas, subtitle_meta['subtitle_object'].zipped_url)
-            #if all subs downloaded
-            if all([v['downloaded'] for v in v_metas]):
-                break
+        if len(v_metas) > 5:
+            #season packs have priority
+            for subtitle_meta in filter(lambda s: s['session_pack'], subtitle_metas):
+                # print(subtitle_meta)
+                #if pack does not have the ep we want, skip it
+                if 'episode' in subtitle_meta and isinstance(subtitle_meta['episode'], list):
+                    eps = [v['episode'] for v in v_metas if not v['downloaded']]
+                    eps = set(itertools.chain.from_iterable([i if isinstance(i, list) else [i] for i in eps]))
+                    if not eps.intersection(subtitle_meta['episode']):
+                        continue
+                # print("trying to download:"+subtitle_meta['filename'])
+                download_sesson_pack(v_metas, subtitle_meta['subtitle_object'].zipped_url)
+                #if all subs downloaded
+                if all([v['downloaded'] for v in v_metas]):
+                    break
 
         #download others files that season pack doesnt get
         for video_meta in filter(lambda v: not v['downloaded'], v_metas):
@@ -175,7 +180,13 @@ subscene-dl.py /somedir
 note: subscene-dl.py will skip any file that already have subs
 '''
 if __name__ == "__main__":
-    if len(sys.argv) > 2:
-        savepath = sys.argv[2]
-    videos = find_video_files(os.path.normpath(sys.argv[1]))
+    parser = argparse.ArgumentParser()
+    parser.add_argument('path')
+    parser.add_argument('--savepath', help='where to save')
+    parser.add_argument('--searchtype', default='', help='subscene section', choices=subscene.SectionsParts.values())
+    args = parser.parse_args()
+
+    searchtype = next((i for i, j in subscene.SectionsParts.items() if j.lower() == args.searchtype.lower()), 0)
+
+    videos = find_video_files(os.path.normpath(args.path))
     download_subtitles(videos)

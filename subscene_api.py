@@ -236,12 +236,13 @@ def search(term, language="", limit_to=SearchTypes.Exact):
         subtitles = Subtitle.from_rows(rows)
         return Film(term, subtitles=subtitles)
 
-    for junk, search_type in SearchTypes.__members__.items():
-        if section_exists(soup, search_type):
-            return get_first_film(soup, search_type, term)
-
-        if limit_to == search_type:
-            return
+    if limit_to:
+        if section_exists(soup, limit_to):
+            return get_first_film(soup, limit_to, term)
+    else:
+        for junk, search_type in SearchTypes.__members__.items():
+            if section_exists(soup, search_type):
+                return get_first_film(soup, search_type, term)
 
 
 delay=1

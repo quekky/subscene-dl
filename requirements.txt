@@ -3,3 +3,7 @@ beautifulsoup4
 guessit
 cloudscraper
 fuzzywuzzy
+
+
+#https://www.lfd.uci.edu/~gohlke/pythonlibs/#python-levenshtein
+python-Levenshtein-wheels
